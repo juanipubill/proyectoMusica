@@ -1,0 +1,1056 @@
+import numpy as np
+import pandas as pd
+import duckdb as dd
+import matplotlib.pyplot as plt
+import seaborn as sns 
+from scipy import stats
+
+df_proyecto_musica = pd.read_csv('Ingresar Archivo')
+
+#armamos las tablas separando por canción, artista y álbum
+q_artista = """
+  SELECT DISTINCT artista
+  FROM df_proyecto_musica
+"""
+
+df_artista = dd.query("SELECT DISTINCT artista FROM df_proyecto_musica").df()
+df_artista.insert(0, 'id_artista', range(1, len(df_artista) + 1))
+
+q_album = """
+  SELECT DISTINCT album, año
+  FROM df_proyecto_musica
+"""
+
+df_album = dd.query("SELECT DISTINCT album, año FROM df_proyecto_musica").df()
+df_album.insert(0, 'id_album', range(1, len(df_album) + 1))
+
+q_cancion = """
+    SELECT
+        c.id,
+        c.nombre,
+        c."duración(min)" AS duracion_min,
+        c."track_number" AS track_number,
+        c."BPM" AS bpm,
+        c."es_explícita" AS es_explicita,
+        c."tono" AS tono,
+        c."es_relevante" AS es_relevante,
+        a.id_artista,
+        al.id_album
+    FROM df_proyecto_musica AS c
+    INNER JOIN df_artista a ON c.artista = a.artista
+    INNER JOIN df_album al ON c.album = al.album AND c.año = al.año
+"""
+
+df_cancion = dd.query(q_cancion).df()
+
+df_explicita = df_cancion[df_cancion['es_explicita'] == True] #15 en todo el dataset, 9 relevantes y 6 no
+
+q_bpm= """
+    SELECT DISTINCT id, nombre, bpm, es_relevante
+    FROM df_cancion
+"""
+df_bpm = dd.query(q_bpm).df()
+
+plt.figure(figsize=(8, 6))
+df_bpm.boxplot(column='bpm', by='es_relevante', grid=True, patch_artist=True)
+
+plt.title('Distribución de BPM según relevancia de la canción')
+plt.suptitle('')
+plt.xlabel('¿Canción relevante?')
+plt.ylabel('BPM')
+plt.xticks([1, 2], ['No relevante', 'Relevante'], rotation=0)
+
+plt.tight_layout()
+plt.show()
+
+q_bpmBajos = """
+    SELECT DISTINCT *
+    FROM df_bpm
+    WHERE bpm <= 75
+"""
+df_bpmBajos = dd.query(q_bpmBajos).df()
+
+cant_R_bpmBajos    = df_bpmBajos[df_bpmBajos['es_relevante'] == True].shape[0]
+cant_NR_bpmBajos   = df_bpmBajos[df_bpmBajos['es_relevante'] == False].shape[0]
+
+q_trackNumber = """
+    SELECT id, nombre, track_number, bpm, es_relevante
+    FROM df_cancion
+"""
+df_trackNumber = dd.query(q_trackNumber).df()
+
+filtro = df_trackNumber['track_number'] < 20
+
+relevantes = df_trackNumber[filtro & (df_trackNumber['es_relevante'] == True)]
+no_relevantes = df_trackNumber[filtro & (df_trackNumber['es_relevante'] == False)]
+
+plt.scatter(relevantes['track_number'], relevantes['bpm'],
+            color='blue', alpha=0.7, s=100, label='Relevante (True)')
+plt.scatter(no_relevantes['track_number'], no_relevantes['bpm'],
+            color='red', alpha=0.7, s=100, label='No relevante (False)')
+
+plt.xlabel('Track Number (track_number)', fontsize=12)
+plt.ylabel('BPM', fontsize=12)
+plt.title('Relación entre Track Number y BPM según relevancia', fontsize=14)
+
+plt.legend()
+
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+q_tracks1a3 = """
+    SELECT *
+    FROM df_trackNumber
+    WHERE track_number < 4
+"""
+df_tracks1a3 = dd.query(q_tracks1a3).df()
+
+q_tracks8a10 = """
+    SELECT *
+    FROM df_trackNumber
+    WHERE 7< track_number AND track_number < 11
+"""
+df_tracks8a10 = dd.query(q_tracks8a10).df()
+
+
+cant_R_tracks1a3 = df_tracks1a3[df_tracks1a3['es_relevante'] == True].shape[0]
+cant_NR_tracks1a3 = df_tracks1a3[df_tracks1a3['es_relevante'] == False].shape[0]
+
+cant_R_tracks8a10 = df_tracks8a10[df_tracks8a10['es_relevante'] == True].shape[0]
+cant_NR_tracks8a10 = df_tracks8a10[df_tracks8a10['es_relevante'] == False].shape[0]
+
+q_mayores = """
+    SELECT id, nombre, tono, es_relevante, duracion_min
+    FROM df_cancion
+    WHERE tono LIKE '%A'
+"""
+df_mayores = dd.query(q_mayores).df()
+
+q_menores = """
+    SELECT id, nombre, tono, es_relevante, duracion_min
+    FROM df_cancion
+    WHERE tono LIKE '%B'
+"""
+df_menores = dd.query(q_menores).df()
+
+#%% IMAGENES 
+
+# Crear figura con dos subplots
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+
+# ========== GRÁFICO 1: Histograma con curva de densidad (campana) ==========
+# Separar por relevancia
+relevantes = df_cancion[df_cancion['es_relevante'] == True]['duracion_min']
+no_relevantes = df_cancion[df_cancion['es_relevante'] == False]['duracion_min']
+
+# Histograma y KDE para relevantes
+ax1.hist(relevantes, bins=25, alpha=0.5, color='blue', edgecolor='black', density=True, label='Relevantes (hist)')
+kde_relevantes = stats.gaussian_kde(relevantes)
+x_relevantes = np.linspace(relevantes.min(), relevantes.max(), 100)
+ax1.plot(x_relevantes, kde_relevantes(x_relevantes), 'b-', linewidth=2, label='Curva relevantes')
+
+# Histograma y KDE para no relevantes
+ax1.hist(no_relevantes, bins=8, alpha=0.5, color='red', edgecolor='black', density=True, label='No relevantes (hist)')
+kde_no_relevantes = stats.gaussian_kde(no_relevantes)
+x_no_relevantes = np.linspace(no_relevantes.min(), no_relevantes.max(), 100)
+ax1.plot(x_no_relevantes, kde_no_relevantes(x_no_relevantes), 'r-', linewidth=2, label='Curva no relevantes')
+
+ax1.set_xlabel('Duración (minutos)', fontsize=12)
+ax1.set_ylabel('Densidad', fontsize=12)
+ax1.set_title('Histograma + Curva de densidad\n(Comparativa relevantes vs no relevantes)', fontsize=12)
+ax1.legend()
+ax1.grid(True, alpha=0.3)
+
+# ========== GRÁFICO 2: Box plot + violín (visión más clara de la distribución) ==========
+# Crear DataFrame con la columna categórica
+df_plot = df_cancion.copy()
+df_plot['relevancia'] = df_plot['es_relevante'].map({True: 'Relevante', False: 'No relevante'})
+
+# Violin plot (similar a una campana)
+sns.violinplot(data=df_plot, x='relevancia', y='duracion_min', ax=ax2,
+               palette={'Relevante': 'blue', 'No relevante': 'red'}, inner='box', alpha=0.7)
+
+# Superponer puntos individuales
+sns.stripplot(data=df_plot, x='relevancia', y='duracion_min', ax=ax2,
+              color='black', alpha=0.5, size=8, jitter=True)
+
+ax2.set_xlabel('Relevancia', fontsize=12)
+ax2.set_ylabel('Duración (minutos)', fontsize=12)
+ax2.set_title('Distribución por relevancia\n(Violín + Box plot + Puntos)', fontsize=12)
+ax2.grid(True, alpha=0.3, axis='y')
+
+plt.tight_layout()
+plt.show()
+
+# ========== ESTADÍSTICAS ADICIONALES ==========
+print("=" * 50)
+print("ESTADÍSTICAS DE DURACIÓN (minutos)")
+print("=" * 50)
+
+print(f"\n> RELEVANTES (n={len(relevantes)}) <")
+print(f"   Media: {relevantes.mean():.2f} min")
+print(f"   Mediana: {relevantes.median():.2f} min")
+print(f"   Desviación estándar: {relevantes.std():.2f}")
+print(f"   Mínimo: {relevantes.min():.2f}")
+print(f"   Máximo: {relevantes.max():.2f}")
+
+print(f"\n > NO RELEVANTES (n={len(no_relevantes)}) <")
+print(f"   Media: {no_relevantes.mean():.2f} min")
+print(f"   Mediana: {no_relevantes.median():.2f} min")
+print(f"   Desviación estándar: {no_relevantes.std():.2f}")
+print(f"   Mínimo: {no_relevantes.min():.2f}")
+print(f"   Máximo: {no_relevantes.max():.2f}")
+
+# Prueba de normalidad (Shapiro-Wilk)
+print("\n" + "=" * 50)
+print("PRUEBA DE NORMALIDAD (Shapiro-Wilk)")
+print("=" * 50)
+shapiro_relevantes = stats.shapiro(relevantes)
+shapiro_no_relevantes = stats.shapiro(no_relevantes)
+
+print(f"\nRelevantes: p-value = {shapiro_relevantes.pvalue:.4f}")
+print(f"  → {'Sigue distribución normal' if shapiro_relevantes.pvalue > 0.05 else 'NO sigue distribución normal'}")
+
+print(f"\nNo relevantes: p-value = {shapiro_no_relevantes.pvalue:.4f}")
+print(f"  → {'Sigue distribución normal' if shapiro_no_relevantes.pvalue > 0.05 else 'NO sigue distribución normal'}")
+
+# Gráfico de densidad con mayor resolución
+fig, ax = plt.subplots(figsize=(10, 6))
+
+for relevante, color, label in [(True, 'blue', 'Relevantes'), (False, 'red', 'No relevantes')]:
+    datos = df_cancion[df_cancion['es_relevante'] == relevante]['duracion_min']
+    sns.kdeplot(datos, fill=True, alpha=0.4, color=color, label=label, bw_adjust=0.5, ax=ax)
+
+ax.set_xlabel('Duración (minutos)')
+ax.set_ylabel('Densidad')
+ax.set_title('Distribución de duración')
+ax.legend()
+plt.show()
+
+##PREVIO AL 2000 
+q_pre2K = """
+    SELECT d.*, a.año
+    FROM df_cancion AS d
+    JOIN df_album AS a
+    ON a.id_album == d.id_album
+    WHERE a.año < 2000
+"""
+df_pre2K = dd.query(q_pre2K).df()
+
+# ==========================================
+# GRÁFICO DE DENSIDAD PARA ÁLBUMES ANTES DEL 2000
+# ==========================================
+
+plt.figure(figsize=(12, 6))
+
+# Gráfico 1: Curvas de densidad (KDE)
+plt.subplot(1, 2, 1)
+
+# Separar por relevancia dentro de este filtro
+relevantes_pre2K = df_pre2K[df_pre2K['es_relevante'] == True]['duracion_min']
+no_relevantes_pre2K = df_pre2K[df_pre2K['es_relevante'] == False]['duracion_min']
+
+# Graficar KDE
+if len(relevantes_pre2K) > 1:
+    sns.kdeplot(relevantes_pre2K, fill=True, alpha=0.4, color='blue',
+                label=f'Relevantes (n={len(relevantes_pre2K)})', bw_adjust=0.5)
+
+if len(no_relevantes_pre2K) > 1:
+    sns.kdeplot(no_relevantes_pre2K, fill=True, alpha=0.4, color='red',
+                label=f'No relevantes (n={len(no_relevantes_pre2K)})', bw_adjust=0.5)
+
+plt.xlabel('Duración (minutos)', fontsize=12)
+plt.ylabel('Densidad', fontsize=12)
+plt.title(f'Distribución de duración\nÁlbumes anteriores al 2000 (n={len(df_pre2K)})', fontsize=12)
+plt.legend()
+plt.grid(True, alpha=0.3)
+
+# Gráfico 2: Histograma superpuesto
+plt.subplot(1, 2, 2)
+
+plt.hist(relevantes_pre2K, bins=15, alpha=0.5, color='blue',
+         label=f'Relevantes (n={len(relevantes_pre2K)})', density=True, edgecolor='black')
+plt.hist(no_relevantes_pre2K, bins=15, alpha=0.5, color='red',
+         label=f'No relevantes (n={len(no_relevantes_pre2K)})', density=True, edgecolor='black')
+
+plt.xlabel('Duración (minutos)', fontsize=12)
+plt.ylabel('Densidad', fontsize=12)
+plt.title('Histograma comparativo', fontsize=12)
+plt.legend()
+plt.grid(True, alpha=0.3, axis='y')
+
+plt.tight_layout()
+plt.show()
+
+# ==========================================
+# ESTADÍSTICAS Y PRUEBA DE NORMALIDAD
+# ==========================================
+
+print("=" * 60)
+print(f"ANÁLISIS DE ÁLBUMES ANTERIORES AL 2000 (n={len(df_pre2K)} canciones)")
+print("=" * 60)
+
+print(f"\n> RELEVANTES (n={len(relevantes_pre2K)}) <")
+if len(relevantes_pre2K) > 1:
+    print(f"   Media: {relevantes_pre2K.mean():.2f} min")
+    print(f"   Mediana: {relevantes_pre2K.median():.2f} min")
+    print(f"   Desvío estándar: {relevantes_pre2K.std():.2f}")
+    print(f"   Rango: [{relevantes_pre2K.min():.2f}, {relevantes_pre2K.max():.2f}]")
+
+    # Prueba de normalidad
+    if len(relevantes_pre2K) >= 3:
+        shapiro_rel = stats.shapiro(relevantes_pre2K)
+        print(f"   Shapiro-Wilk p-value: {shapiro_rel.pvalue:.4f}")
+        print(f"   → {'Sigue distribución normal' if shapiro_rel.pvalue > 0.05 else 'NO sigue distribución normal'}")
+
+print(f"\n> NO RELEVANTES (n={len(no_relevantes_pre2K)}) <")
+if len(no_relevantes_pre2K) > 1:
+    print(f"   Media: {no_relevantes_pre2K.mean():.2f} min")
+    print(f"   Mediana: {no_relevantes_pre2K.median():.2f} min")
+    print(f"   Desvío estándar: {no_relevantes_pre2K.std():.2f}")
+    print(f"   Rango: [{no_relevantes_pre2K.min():.2f}, {no_relevantes_pre2K.max():.2f}]")
+
+    # Prueba de normalidad
+    if len(no_relevantes_pre2K) >= 3:
+        shapiro_no_rel = stats.shapiro(no_relevantes_pre2K)
+        print(f"   Shapiro-Wilk p-value: {shapiro_no_rel.pvalue:.4f}")
+        print(f"   → {'Sigue distribución normal' if shapiro_no_rel.pvalue > 0.05 else 'NO sigue distribución normal'}")
+
+# Comparativa con el dataset completo
+print("\n" + "=" * 60)
+print("COMPARATIVA CON EL DATASET COMPLETO")
+print("=" * 60)
+
+if 'df_cancion' in globals():
+    relevantes_total = df_cancion[df_cancion['es_relevante'] == True]['duracion_min']
+    no_relevantes_total = df_cancion[df_cancion['es_relevante'] == False]['duracion_min']
+    print(f"\n.- Dataset completo (n={len(df_cancion)}):")
+    print(f"   Relevantes media: {relevantes_total.mean():.2f} min")
+    print(f"   No relevantes media: {no_relevantes_total.mean():.2f} min")
+    print(f"\n.- Solo álbumes < 2000 (n={len(df_pre2K)}):")
+    if len(relevantes_pre2K) > 0:
+        print(f"   Relevantes media: {relevantes_pre2K.mean():.2f} min")
+    if len(no_relevantes_pre2K) > 0:
+        print(f"   No relevantes media: {no_relevantes_pre2K.mean():.2f} min")
+        
+
+#%% Agarramos posteriores al 1999
+q_post2K = """
+    SELECT d.*, a.año
+    FROM df_cancion AS d
+    JOIN df_album AS a
+    ON a.id_album == d.id_album
+    WHERE a.año > 1999
+"""
+df_post2K = dd.query(q_post2K).df()
+
+# ==========================================
+# GRÁFICO DE DENSIDAD PARA ÁLBUMES DESPUÉS DEL 99
+# ==========================================
+
+plt.figure(figsize=(12, 6))
+
+# Gráfico 1: Curvas de densidad (KDE)
+plt.subplot(1, 2, 1)
+
+# Separar por relevancia dentro de este filtro
+relevantes_post2K = df_post2K[df_post2K['es_relevante'] == True]['duracion_min']
+no_relevantes_post2K = df_post2K[df_post2K['es_relevante'] == False]['duracion_min']
+
+# Graficar KDE
+if len(relevantes_post2K) > 1:
+    sns.kdeplot(relevantes_post2K, fill=True, alpha=0.4, color='blue',
+                label=f'Relevantes (n={len(relevantes_post2K)})', bw_adjust=0.5)
+
+if len(no_relevantes_post2K) > 1:
+    sns.kdeplot(no_relevantes_post2K, fill=True, alpha=0.4, color='red',
+                label=f'No relevantes (n={len(no_relevantes_post2K)})', bw_adjust=0.5)
+
+plt.xlabel('Duración (minutos)', fontsize=12)
+plt.ylabel('Densidad', fontsize=12)
+plt.title(f'Distribución de duración\nÁlbumes posteriores al 2000 (n={len(df_post2K)})', fontsize=12)
+plt.legend()
+plt.grid(True, alpha=0.3)
+
+# Gráfico 2: Histograma superpuesto
+plt.subplot(1, 2, 2)
+
+plt.hist(relevantes_post2K, bins=15, alpha=0.5, color='blue',
+         label=f'Relevantes (n={len(relevantes_post2K)})', density=True, edgecolor='black')
+plt.hist(no_relevantes_post2K, bins=15, alpha=0.5, color='red',
+         label=f'No relevantes (n={len(no_relevantes_post2K)})', density=True, edgecolor='black')
+
+plt.xlabel('Duración (minutos)', fontsize=12)
+plt.ylabel('Densidad', fontsize=12)
+plt.title('Histograma comparativo', fontsize=12)
+plt.legend()
+plt.grid(True, alpha=0.3, axis='y')
+
+plt.tight_layout()
+plt.show()
+
+# ==========================================
+# ESTADÍSTICAS Y PRUEBA DE NORMALIDAD
+# ==========================================
+
+print("=" * 60)
+print(f"ANÁLISIS DE ÁLBUMES  AL 2000 (n={len(df_post2K)} canciones)")
+print("=" * 60)
+
+print(f"\n> RELEVANTES (n={len(relevantes_post2K)}) <")
+if len(relevantes_post2K) > 1:
+    print(f"   Media: {relevantes_post2K.mean():.2f} min")
+    print(f"   Mediana: {relevantes_post2K.median():.2f} min")
+    print(f"   Desvío estándar: {relevantes_post2K.std():.2f}")
+    print(f"   Rango: [{relevantes_post2K.min():.2f}, {relevantes_post2K.max():.2f}]")
+
+    # Prueba de normalidad
+    if len(relevantes_post2K) >= 3:
+        shapiro_rel = stats.shapiro(relevantes_post2K)
+        print(f"   Shapiro-Wilk p-value: {shapiro_rel.pvalue:.4f}")
+        print(f"   → {'Sigue distribución normal' if shapiro_rel.pvalue > 0.05 else 'NO sigue distribución normal'}")
+
+print(f"\n> NO RELEVANTES (n={len(no_relevantes_post2K)}) <")
+if len(no_relevantes_post2K) > 1:
+    print(f"   Media: {no_relevantes_post2K.mean():.2f} min")
+    print(f"   Mediana: {no_relevantes_post2K.median():.2f} min")
+    print(f"   Desvío estándar: {no_relevantes_post2K.std():.2f}")
+    print(f"   Rango: [{no_relevantes_post2K.min():.2f}, {no_relevantes_post2K.max():.2f}]")
+
+    # Prueba de normalidad
+    if len(no_relevantes_post2K) >= 3:
+        shapiro_no_rel = stats.shapiro(no_relevantes_post2K)
+        print(f"   Shapiro-Wilk p-value: {shapiro_no_rel.pvalue:.4f}")
+        print(f"   → {'Sigue distribución normal' if shapiro_no_rel.pvalue > 0.05 else 'NO sigue distribución normal'}")
+
+# Comparativa con el dataset completo
+print("\n" + "=" * 60)
+print("COMPARATIVA CON EL DATASET COMPLETO")
+print("=" * 60)
+
+if 'df_cancion' in globals():
+    relevantes_total = df_cancion[df_cancion['es_relevante'] == True]['duracion_min']
+    no_relevantes_total = df_cancion[df_cancion['es_relevante'] == False]['duracion_min']
+    print(f"\n.- Dataset completo (n={len(df_cancion)}):")
+    print(f"   Relevantes media: {relevantes_total.mean():.2f} min")
+    print(f"   No relevantes media: {no_relevantes_total.mean():.2f} min")
+    print(f"\n.- Solo álbumes > 1999 (n={len(df_post2K)}):")
+    if len(relevantes_post2K) > 0:
+        print(f"   Relevantes media: {relevantes_post2K.mean():.2f} min")
+    if len(no_relevantes_post2K) > 0:
+        print(f"   No relevantes media: {no_relevantes_post2K.mean():.2f} min")
+        
+#%% EVALUAMOS EN EL PIE CHART SOBRE LA TONALIDAD MENOR LAS RELEVANTES Y LAS NO RELEVANTES
+
+# ========== RELEVANTES EN MAYORES ==========
+nrelevantesMayores = df_mayores[df_mayores['es_relevante'] == True]
+
+# ========== NO RELEVANTES EN MAYORES ==========
+nno_relevantesMayores = df_mayores[df_mayores['es_relevante'] == False]
+
+# Todos los tonos mayores posibles (12)
+tonos_completos_mayores = ['1A', '2A', '3A', '4A', '5A', '6A', '7A', '8A', '9A', '10A', '11A', '12A']
+
+# Colores variados para cada porción
+def get_color_palette(n):
+    """Genera n colores distintos usando el mapa 'tab20' que tiene 20 colores diferentes"""
+    cmap = plt.cm.tab20
+    return [cmap(i % 20) for i in range(n)]
+
+# ===== GRÁFICO 1: RELEVANTES EN MAYORES (lado a lado) =====
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 8))
+
+if len(nrelevantesMayores) > 0:
+    conteo_rel = nrelevantesMayores['tono'].value_counts()
+    tonos_rel = [t for t in tonos_completos_mayores if conteo_rel.get(t, 0) > 0]
+    valores_rel = [conteo_rel.get(t, 0) for t in tonos_rel]
+    
+    colores_rel = get_color_palette(len(tonos_rel))
+    
+    wedges, texts, autotexts = ax1.pie(valores_rel,
+                                        labels=[f"{t}" for t in tonos_rel],
+                                        colors=colores_rel,
+                                        autopct='%1.1f%%',
+                                        startangle=90,
+                                        textprops={'fontsize': 11, 'fontweight': 'bold'})
+    
+    # Agregar leyenda con los conteos
+    leyenda_labels = [f"{t}: {conteo_rel.get(t,0)}" for t in tonos_rel]
+    ax1.legend(wedges, leyenda_labels, title="Tonos", loc="center left", bbox_to_anchor=(1, 0, 0.5, 1))
+    ax1.set_title(f'RELEVANTES en MAYORES\n(n={len(nrelevantesMayores)})', fontsize=14, fontweight='bold')
+
+# ===== GRÁFICO 2: NO RELEVANTES EN MAYORES =====
+if len(nno_relevantesMayores) > 0:
+    conteo_no = nno_relevantesMayores['tono'].value_counts()
+    tonos_no = [t for t in tonos_completos_mayores if conteo_no.get(t, 0) > 0]
+    valores_no = [conteo_no.get(t, 0) for t in tonos_no]
+    
+    colores_no = get_color_palette(len(tonos_no))
+    
+    wedges2, texts2, autotexts2 = ax2.pie(valores_no,
+                                          labels=[f"{t}" for t in tonos_no],
+                                          colors=colores_no,
+                                          autopct='%1.1f%%',
+                                          startangle=90,
+                                          textprops={'fontsize': 11, 'fontweight': 'bold'})
+    
+    leyenda_labels2 = [f"{t}: {conteo_no.get(t,0)}" for t in tonos_no]
+    ax2.legend(wedges2, leyenda_labels2, title="Tonos", loc="center left", bbox_to_anchor=(1, 0, 0.5, 1))
+    ax2.set_title(f'NO RELEVANTES en MAYORES\n(n={len(nno_relevantesMayores)})', fontsize=14, fontweight='bold')
+
+plt.tight_layout()
+plt.show()
+
+# ========== AHORA PARA MENORES (terminan en B) ==========
+
+nrelevantesMenores = df_menores[df_menores['es_relevante'] == True]
+nno_relevantesMenores = df_menores[df_menores['es_relevante'] == False]
+
+tonos_completos_menores = ['1B', '2B', '3B', '4B', '5B', '6B', '7B', '8B', '9B', '10B', '11B', '12B']
+
+fig2, (ax3, ax4) = plt.subplots(1, 2, figsize=(18, 8))
+
+# RELEVANTES EN MENORES
+if len(nrelevantesMenores) > 0:
+    conteo_rel_m = nrelevantesMenores['tono'].value_counts()
+    tonos_rel_m = [t for t in tonos_completos_menores if conteo_rel_m.get(t, 0) > 0]
+    valores_rel_m = [conteo_rel_m.get(t, 0) for t in tonos_rel_m]
+    
+    colores_rel_m = get_color_palette(len(tonos_rel_m))
+    
+    wedges3, texts3, autotexts3 = ax3.pie(valores_rel_m,
+                                           labels=[f"{t}" for t in tonos_rel_m],
+                                           colors=colores_rel_m,
+                                           autopct='%1.1f%%',
+                                           startangle=90,
+                                           textprops={'fontsize': 11, 'fontweight': 'bold'})
+    
+    leyenda_labels3 = [f"{t}: {conteo_rel_m.get(t,0)}" for t in tonos_rel_m]
+    ax3.legend(wedges3, leyenda_labels3, title="Tonos", loc="center left", bbox_to_anchor=(1, 0, 0.5, 1))
+    ax3.set_title(f'RELEVANTES en MENORES\n(n={len(nrelevantesMenores)})', fontsize=14, fontweight='bold')
+
+# NO RELEVANTES EN MENORES
+if len(nno_relevantesMenores) > 0:
+    conteo_no_m = nno_relevantesMenores['tono'].value_counts()
+    tonos_no_m = [t for t in tonos_completos_menores if conteo_no_m.get(t, 0) > 0]
+    valores_no_m = [conteo_no_m.get(t, 0) for t in tonos_no_m]
+    
+    colores_no_m = get_color_palette(len(tonos_no_m))
+    
+    wedges4, texts4, autotexts4 = ax4.pie(valores_no_m,
+                                           labels=[f"{t}" for t in tonos_no_m],
+                                           colors=colores_no_m,
+                                           autopct='%1.1f%%',
+                                           startangle=90,
+                                           textprops={'fontsize': 11, 'fontweight': 'bold'})
+    
+    leyenda_labels4 = [f"{t}: {conteo_no_m.get(t,0)}" for t in tonos_no_m]
+    ax4.legend(wedges4, leyenda_labels4, title="Tonos", loc="center left", bbox_to_anchor=(1, 0, 0.5, 1))
+    ax4.set_title(f'NO RELEVANTES en MENORES\n(n={len(nno_relevantesMenores)})', fontsize=14, fontweight='bold')
+
+plt.tight_layout()
+plt.show()
+
+
+#%% Mayores y menores CON
+q_mayoresPre2K = """
+    SELECT p.*, t.tono
+    FROM df_pre2K AS p
+    JOIN df_mayores AS t
+    ON p.id == t.id
+"""
+df_mayoresPre2K = dd.query(q_mayoresPre2K).df()
+
+q_menoresPre2K = """
+    SELECT p.*, t.tono
+    FROM df_pre2K AS p
+    JOIN df_menores AS t
+    ON p.id == t.id
+"""
+df_menoresPre2K = dd.query(q_menoresPre2K).df()
+
+#cant_R_mayoresPre2K = df_mayoresPre2K[df_mayoresPre2K['es_relevante'] == True].shape[0] #26
+#cant_NR_mayoresPre2K = df_mayoresPre2K[df_mayoresPre2K['es_relevante'] == False].shape[0] #37
+
+#cant_R_menoresPre2K = df_menoresPre2K[df_menoresPre2K['es_relevante'] == True].shape[0] #68
+#cant_NR_menoresPre2K = df_menoresPre2K[df_menoresPre2K['es_relevante'] == False].shape[0] #59
+
+q_mayoresPost2K = """
+    SELECT p.*, t.tono
+    FROM df_post2K AS p
+    JOIN df_mayores AS t
+    ON p.id == t.id
+"""
+df_mayoresPost2K = dd.query(q_mayoresPost2K).df()
+
+q_menoresPost2K = """
+    SELECT p.*, t.tono
+    FROM df_post2K AS p
+    JOIN df_menores AS t
+    ON p.id == t.id
+"""
+df_menoresPost2K = dd.query(q_menoresPost2K).df()
+
+#cant_R_mayoresPost2K = df_mayoresPost2K[df_mayoresPost2K['es_relevante'] == True].shape[0] #45
+#cant_NR_mayoresPost2K = df_mayoresPost2K[df_mayoresPost2K['es_relevante'] == False].shape[0] #61
+
+#cant_R_menoresPost2K = df_menoresPost2K[df_menoresPost2K['es_relevante'] == True].shape[0] #112
+#cant_NR_menoresPost2K = df_menoresPost2K[df_menoresPost2K['es_relevante'] == False].shape[0] #92
+
+def plot_relevancia_tonos(df_mayores, df_menores, titulo_epoca):
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+    fig.suptitle(f'Relevancia según Tono - {titulo_epoca}', fontsize=16)
+
+    # Datos Mayores
+    r_may = df_mayores[df_mayores['es_relevante'] == True].shape[0]
+    nr_may = df_mayores[df_mayores['es_relevante'] == False].shape[0]
+
+    # Datos Menores
+    r_men = df_menores[df_menores['es_relevante'] == True].shape[0]
+    nr_men = df_menores[df_menores['es_relevante'] == False].shape[0]
+
+    # Colores: Verde para Relevante, Rojo para No Relevante (suave)
+    colors = ['#66b3ff', '#ff9999']
+
+    # Pie Mayores
+    ax1.pie([r_may, nr_may], labels=['Relevante', 'No Relevante'], autopct='%1.1f%%',
+            startangle=90, colors=colors, explode=(0.05, 0))
+    ax1.set_title('Tonos MAYORES')
+
+    # Pie Menores
+    ax2.pie([r_men, nr_men], labels=['Relevante', 'No Relevante'], autopct='%1.1f%%',
+            startangle=90, colors=colors, explode=(0.05, 0))
+    ax2.set_title('Tonos MENORES')
+
+    plt.show()
+
+# Ejecución para ambas épocas
+plot_relevancia_tonos(df_mayoresPre2K, df_menoresPre2K, "Pre 2000")
+plot_relevancia_tonos(df_mayoresPost2K, df_menoresPost2K, "Post 2000")
+
+#%% 
+
+consulta = """
+            SELECT *
+            FROM df_cancion
+            WHERE id_artista IN (
+                SELECT id_artista
+                FROM df_cancion
+                GROUP BY id_artista
+                HAVING COUNT(*) >= 12
+            )
+                """
+                
+df_cancionMasDoce = dd.query(consulta).df()
+
+##QUIERO ANALIZAR CUANTOS ARTISTAS SON PARA EL GRÁFICO 
+
+consulta2 = """ SELECT DISTINCT id_artista
+                FROM df_cancionMasDoce """
+                
+artistasConMasDoce = dd.query(consulta2).df()
+
+##SON 12 ARTISTAS CON IGUAL O MAS DE 12 CANCIONES
+
+##AHORA PROBAMOS GRÁFICO 
+
+consulta3 = """
+SELECT 
+    a.artista,
+    c.id_artista,
+    AVG(c.bpm) AS bpm_promedio,
+    COUNT(*) AS canciones
+FROM df_cancionMasDoce c
+JOIN df_artista a
+    ON c.id_artista = a.id_artista
+GROUP BY c.id_artista, a.artista
+ORDER BY bpm_promedio DESC
+"""
+df_bpm_artistas = dd.query(consulta3).df()
+
+promedio_global = df_bpm_artistas["bpm_promedio"].mean()
+
+df_bpm_artistas["diff"] = (
+    df_bpm_artistas["bpm_promedio"] - promedio_global
+)
+
+
+# Ordenar artistas por BPM promedio
+df_plot = df_bpm_artistas.sort_values(
+    by="bpm_promedio",
+    ascending=False
+)
+
+fig, ax = plt.subplots(figsize=(14,7))
+
+# Barras
+bars = ax.bar(
+    df_plot["artista"],
+    df_plot["bpm_promedio"]
+)
+
+# Título
+ax.set_title(
+    "BPM promedio por artista",
+    fontsize=22,
+    fontweight='bold'
+)
+
+# Labels
+ax.set_ylabel("BPM promedio", fontsize=14)
+ax.set_xlabel("Artista", fontsize=14)
+
+# Rotar nombres
+plt.xticks(rotation=45, ha='right')
+
+# Mostrar valores arriba de las barras
+for bar in bars:
+    height = bar.get_height()
+
+    ax.text(
+        bar.get_x() + bar.get_width()/2,
+        height + 1,
+        f"{height:.1f}",
+        ha='center',
+        fontsize=10
+    )
+
+# Margen superior
+ax.set_ylim(0, df_plot["bpm_promedio"].max() + 15)
+
+plt.tight_layout()
+plt.show()
+
+##SEPARAMOS EN RELEVANTES Y NO RELEVANTES 
+
+consulta5 = """
+SELECT 
+    a.artista,
+    c.es_relevante,
+    AVG(c.bpm) AS bpm_promedio
+FROM df_cancionMasDoce c
+JOIN df_artista a
+    ON c.id_artista = a.id_artista
+GROUP BY a.artista, c.es_relevante
+"""
+
+df_rel = dd.query(consulta5).df()
+
+df_pivot = df_rel.pivot(
+    index='artista',
+    columns='es_relevante',
+    values='bpm_promedio'
+).fillna(0)
+
+df_pivot.columns = ['No Relevante', 'Relevante']
+
+df_pivot = df_pivot.sort_values(
+    by='Relevante',
+    ascending=False
+)
+
+
+x = np.arange(len(df_pivot.index))
+width = 0.38
+
+fig, ax = plt.subplots(figsize=(16,8))
+
+bars1 = ax.bar(
+    x - width/2,
+    df_pivot['Relevante'],
+    width,
+    label='Relevante'
+)
+
+bars2 = ax.bar(
+    x + width/2,
+    df_pivot['No Relevante'],
+    width,
+    label='No Relevante'
+)
+
+# Título
+ax.set_title(
+    'BPM promedio por artista\nRelevantes vs No Relevantes',
+    fontsize=22,
+    fontweight='bold'
+)
+
+# Labels
+ax.set_ylabel('BPM Promedio', fontsize=14)
+ax.set_xlabel('Artista', fontsize=14)
+
+# Artistas
+ax.set_xticks(x)
+ax.set_xticklabels(
+    df_pivot.index,
+    rotation=45,
+    ha='right'
+)
+
+# Leyenda
+ax.legend()
+
+# Valores arriba
+for bars in [bars1, bars2]:
+    for bar in bars:
+        height = bar.get_height()
+
+        ax.text(
+            bar.get_x() + bar.get_width()/2,
+            height + 1,
+            f'{height:.1f}',
+            ha='center',
+            fontsize=9
+        )
+
+plt.tight_layout()
+plt.show()
+
+##AHORA CON TONALIDADES HACEMOS EL GRÁFICO 
+df_cancionMasDoce["tipo_tono"] = (
+    df_cancionMasDoce["tono"]
+    .str[-1]
+    .map({
+        "A": "Menor",
+        "B": "Mayor"
+    })
+)
+
+consulta7 = """
+SELECT 
+    a.artista,
+
+    CASE
+        WHEN RIGHT(c.tono, 1) = 'A' THEN 'Menor'
+        WHEN RIGHT(c.tono, 1) = 'B' THEN 'Mayor'
+    END AS tipo_tono,
+
+    c.es_relevante,
+
+    COUNT(*) AS cantidad
+
+FROM df_cancionMasDoce c
+
+JOIN df_artista a
+    ON c.id_artista = a.id_artista
+
+GROUP BY 
+    a.artista,
+    RIGHT(c.tono,1),
+    c.es_relevante
+
+ORDER BY a.artista
+"""
+df_tonos_rel = dd.query(consulta7).df()
+
+df_mayor = df_tonos_rel[
+    df_tonos_rel["tipo_tono"] == "Mayor"
+]
+
+df_menor = df_tonos_rel[
+    df_tonos_rel["tipo_tono"] == "Menor"
+]
+
+pivot_mayor = df_mayor.pivot(
+    index='artista',
+    columns='es_relevante',
+    values='cantidad'
+).fillna(0)
+
+pivot_menor = df_menor.pivot(
+    index='artista',
+    columns='es_relevante',
+    values='cantidad'
+).fillna(0)
+
+pivot_mayor.columns = [
+    'No Relevante',
+    'Relevante'
+]
+
+pivot_menor.columns = [
+    'No Relevante',
+    'Relevante'
+]
+
+##GRÁFICO MAYORES
+
+x = np.arange(len(pivot_mayor.index))
+width = 0.35
+
+fig, ax = plt.subplots(figsize=(16,7))
+
+bars1 = ax.bar(
+    x - width/2,
+    pivot_mayor['Relevante'],
+    width,
+    label='Relevante'
+)
+
+bars2 = ax.bar(
+    x + width/2,
+    pivot_mayor['No Relevante'],
+    width,
+    label='No Relevante'
+)
+
+ax.set_title(
+    'Tonalidades MAYORES\nRelevantes vs No Relevantes',
+    fontsize=22,
+    fontweight='bold'
+)
+
+ax.set_ylabel('Cantidad de canciones')
+ax.set_xlabel('Artista')
+
+ax.set_xticks(x)
+ax.set_xticklabels(
+    pivot_mayor.index,
+    rotation=45,
+    ha='right'
+)
+
+ax.legend()
+
+plt.tight_layout()
+plt.show()
+
+##GRAFICO MENORES
+
+x = np.arange(len(pivot_menor.index))
+
+fig, ax = plt.subplots(figsize=(16,7))
+
+bars1 = ax.bar(
+    x - width/2,
+    pivot_menor['Relevante'],
+    width,
+    label='Relevante'
+)
+
+bars2 = ax.bar(
+    x + width/2,
+    pivot_menor['No Relevante'],
+    width,
+    label='No Relevante'
+)
+
+ax.set_title(
+    'Tonalidades MENORES\nRelevantes vs No Relevantes',
+    fontsize=22,
+    fontweight='bold'
+)
+
+ax.set_ylabel('Cantidad de canciones')
+ax.set_xlabel('Artista')
+
+ax.set_xticks(x)
+ax.set_xticklabels(
+    pivot_menor.index,
+    rotation=45,
+    ha='right'
+)
+
+ax.legend()
+
+plt.tight_layout()
+plt.show()
+
+##ahora vamos por duración
+
+consulta_duracion = """
+SELECT 
+    a.artista,
+    c.es_relevante,
+    AVG(c.duracion_min) AS duracion_promedio
+
+FROM df_cancionMasDoce c
+
+JOIN df_artista a
+    ON c.id_artista = a.id_artista
+
+GROUP BY 
+    a.artista,
+    c.es_relevante
+"""
+
+df_duracion = dd.query(consulta_duracion).df()
+
+df_pivot = df_duracion.pivot(
+    index='artista',
+    columns='es_relevante',
+    values='duracion_promedio'
+).fillna(0)
+
+df_pivot.columns = [
+    'No Relevante',
+    'Relevante'
+]
+
+df_pivot = df_pivot.sort_values(
+    by='Relevante',
+    ascending=False
+)
+
+ 
+
+x = np.arange(len(df_pivot.index))
+width = 0.38
+
+fig, ax = plt.subplots(figsize=(16,8))
+
+bars1 = ax.bar(
+    x - width/2,
+    df_pivot['Relevante'],
+    width,
+    label='Relevante'
+)
+
+bars2 = ax.bar(
+    x + width/2,
+    df_pivot['No Relevante'],
+    width,
+    label='No Relevante'
+)
+
+# Título
+ax.set_title(
+    'Duración promedio por artista\nRelevantes vs No Relevantes',
+    fontsize=22,
+    fontweight='bold'
+)
+
+# Labels
+ax.set_ylabel('Duración promedio (minutos)', fontsize=14)
+ax.set_xlabel('Artista', fontsize=14)
+
+# Artistas
+ax.set_xticks(x)
+ax.set_xticklabels(
+    df_pivot.index,
+    rotation=45,
+    ha='right'
+)
+
+# Leyenda
+ax.legend()
+
+# Mostrar valores arriba
+for bars in [bars1, bars2]:
+
+    for bar in bars:
+
+        height = bar.get_height()
+
+        ax.text(
+            bar.get_x() + bar.get_width()/2,
+            height + 0.03,
+            f'{height:.2f}',
+            ha='center',
+            fontsize=9
+        )
+
+plt.tight_layout()
+plt.show()
