@@ -1,1 +1,2 @@
--Sacamos información de Spotify For Developers 
+-Los datos fueron sacados de Spotify For Developers.
+-Adjuntaremos el csv que contiene los datos que pudimos construir. 
